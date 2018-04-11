@@ -4,11 +4,12 @@
 #include <stdio.h>
 #include <random>
 
-__global__ void Scores(bool* field, int size, double b, float* scores) {
 
+__global__ void Evolve(bool* field, float* scores, double b, int size, bool* next_field) {
 	int row = threadIdx.y;
 	int col = threadIdx.x;
 
+	// Score
 	if (col < size && row < size) {
 		float score = 0;
 
@@ -29,12 +30,9 @@ __global__ void Scores(bool* field, int size, double b, float* scores) {
 			scores[row*size + col] = score;
 	}
 
-}
+	__syncthreads();
 
-__global__ void Strategy(bool* field, float* scores, int size, bool* next_field) {
-	int row = threadIdx.y;
-	int col = threadIdx.x;
-
+	// Strategy
 	int bestStrategyIndex = row*size + col;
 
 	for (int i = -1; i <= 1; i++) //Row
@@ -52,6 +50,8 @@ __global__ void Strategy(bool* field, float* scores, int size, bool* next_field)
 
 	next_field[row*size + col] = field[bestStrategyIndex];
 }
+
+
 
 void InitField(bool* field, size_t size) {
 	for (size_t i = 0; i < size*size; i++) {
@@ -118,8 +118,10 @@ int main()
 
 		cudaMemset(d_scores, 0, size*size);		
 	
-		Scores<<<1, block>>>(d_field, size, b, d_scores);
-		Strategy<<<1, block>>>(d_field, d_scores, size, d_next_field);		
+		//Scores<<<1, block>>>(d_field, size, b, d_scores);
+		//Strategy<<<1, block>>>(d_field, d_scores, size, d_next_field);		
+
+		Evolve<<<1, block>>>(d_field, d_scores, b, size, d_next_field);
 
 		cudaMemcpy(field, d_next_field, size*size, cudaMemcpyKind::cudaMemcpyDeviceToHost);
 

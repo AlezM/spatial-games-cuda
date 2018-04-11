@@ -6,8 +6,10 @@
 
 
 __global__ void Evolve(bool* field, float* scores, double b, int size, bool* next_field) {
+
 	int row = threadIdx.y;
 	int col = threadIdx.x;
+	int memberIndex;
 
 	// Score
 	if (col < size && row < size) {
@@ -17,9 +19,9 @@ __global__ void Evolve(bool* field, float* scores, double b, int size, bool* nex
 		{
 			for (int j = -1; j <= 1; j++) //Col
 			{
-				int memberIndex = (col + i + size) % size + size * ((row + j + size) % size);
+				memberIndex = (col + i + size) % size + size * ((row + j + size) % size);
 
-				if (field[memberIndex] == 1)
+				if (field[memberIndex] == true)
 					score++;
 			}
 		}
@@ -29,8 +31,10 @@ __global__ void Evolve(bool* field, float* scores, double b, int size, bool* nex
 		else 
 			scores[row*size + col] = score;
 	}
-
+	
+	
 	__syncthreads();
+
 
 	// Strategy
 	int bestStrategyIndex = row*size + col;
@@ -39,7 +43,7 @@ __global__ void Evolve(bool* field, float* scores, double b, int size, bool* nex
 	{
 		for (int j = -1; j <= 1; j++) //Col
 		{				
-			int memberIndex = (col + i + size) % size + size * ((row + j + size) % size);
+			memberIndex = (col + i + size) % size + size * ((row + j + size) % size);
 
 			if (scores[bestStrategyIndex] < scores[memberIndex]) 
 			{
@@ -53,15 +57,9 @@ __global__ void Evolve(bool* field, float* scores, double b, int size, bool* nex
 
 
 
-void InitField(bool* field, size_t size) {
+void InitField(bool* field, size_t size, int persentage) {
 	for (size_t i = 0; i < size*size; i++) {
-		field[i] = rand() % 2;
-	}
-}
-
-void InitScores(float* scores, size_t size) {
-	for (size_t i = 0; i < size*size; i++) {
-		scores[i] = 0;
+		field[i] = rand() % 100 < persentage;
 	}
 }
 
@@ -72,20 +70,7 @@ void PrintField(bool* field, int size) {
 			if (i == -1) 
 				printf("_");
 			else
-				printf("%s", field[i*size + j]? " " : "#");
-		}
-		printf("\n");
-	}
-}
-
-void PrintScores(float* scores, size_t size) {
-	for (size_t i = -1; i < size; i++) {
-		for (size_t j = 0; j < size; j++)
-		{
-			if (i == -1) 
-				printf("_");
-			else
-				printf("%.1f ", scores[i*size + j]);
+				printf("%s", field[i*size + j]? "#" : " ");
 		}
 		printf("\n");
 	}
@@ -94,7 +79,7 @@ void PrintScores(float* scores, size_t size) {
 int main()
 {
 	bool* field;
-	size_t size = 10;
+	size_t size = 32;
 	double b = 1.81;
 
 	dim3 block(size, size);
@@ -109,19 +94,20 @@ int main()
 	cudaMalloc((void**)&d_scores, sizeof(float)*size*size);
 	cudaMalloc((void**)&d_next_field, sizeof(bool)*size*size);
 
-	InitField(field, size);
+
+	InitField(field, size, 90);
 	PrintField(field, size);
 
-	for (int i = 0; i < 10; i++) {
+
+	for (int i = 0; i < 20; i++) {
 		// Init scores with zeros in GPU Memory
 		cudaMemcpy(d_field, field, size*size, cudaMemcpyKind::cudaMemcpyHostToDevice);
 
-		cudaMemset(d_scores, 0, size*size);		
-	
-		//Scores<<<1, block>>>(d_field, size, b, d_scores);
-		//Strategy<<<1, block>>>(d_field, d_scores, size, d_next_field);		
+		cudaMemset(d_scores, 0, size*size);	
 
 		Evolve<<<1, block>>>(d_field, d_scores, b, size, d_next_field);
+
+		printf("%s\n", cudaGetErrorString(cudaGetLastError()));
 
 		cudaMemcpy(field, d_next_field, size*size, cudaMemcpyKind::cudaMemcpyDeviceToHost);
 

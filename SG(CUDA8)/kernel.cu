@@ -4,11 +4,14 @@
 #include <stdio.h>
 #include <random>
 
+#include <time.h>
+
+#define BLOCK_SIZE 16
 
 __global__ void Evolve(bool* field, float* scores, double b, int size, bool* next_field) {
 
-	int row = threadIdx.y;
-	int col = threadIdx.x;
+	int row = blockIdx.y * blockDim.y + threadIdx.y;
+	int col = blockIdx.x * blockDim.x + threadIdx.x;
 	int memberIndex;
 
 	// Score
@@ -64,13 +67,14 @@ void InitField(bool* field, size_t size, int persentage) {
 }
 
 void PrintField(bool* field, int size) {
+	printf("\n");
 	for (int i = -1; i < size; i++) {
 		for (size_t j = 0; j < size; j++)
 		{
 			if (i == -1) 
 				printf("_");
 			else
-				printf("%s", field[i*size + j]? "#" : " ");
+				printf("%s", field[i*size + j]? " " : "#");
 		}
 		printf("\n");
 	}
@@ -78,40 +82,69 @@ void PrintField(bool* field, int size) {
 
 int main()
 {
+	FILE *file;
+	clock_t start, finish;
+	char file_name[64];
+
+//// Main program
+
 	bool* field;
-	size_t size = 32;
+	unsigned int size = 32;
 	double b = 1.81;
 
-	dim3 block(size, size);
+	unsigned int steps = 1;
 
 	bool *d_field, *d_next_field;
 	float *d_scores;
 
+
+	printf("Input field size: ");
+	scanf("%i", &size);
+	printf("Input b: ");
+	scanf("%lf", &b);
+	printf("Input number of steps: ");
+	scanf("%i", &steps);
+	printf("Size = %i\nb = %f\nSteps = %i\n\n", size, b, steps);
+
+	sprintf(file_name, "%i_%0.2f.txt", size, b);
+
+	file = fopen(file_name, "w");
+
 	field = (bool*)malloc(sizeof(bool)*size*size);
 	
-	// GPU Memory
+// GPU Memory
 	cudaMalloc((void**)&d_field, sizeof(bool)*size*size);
 	cudaMalloc((void**)&d_scores, sizeof(float)*size*size);
 	cudaMalloc((void**)&d_next_field, sizeof(bool)*size*size);
 
 
 	InitField(field, size, 90);
-	PrintField(field, size);
+
+	unsigned int grid_rows = (size + BLOCK_SIZE - 1) / BLOCK_SIZE;
+	unsigned int grid_cols = (size + BLOCK_SIZE - 1) / BLOCK_SIZE;
+	dim3 dimGrid(grid_cols, grid_rows);
+	dim3 dimBlock(BLOCK_SIZE, BLOCK_SIZE);
 
 
-	for (int i = 0; i < 20; i++) {
-		// Init scores with zeros in GPU Memory
+	for (int i = 0; i < steps; i++) {
+		// Init scores with zeros in GPU Memory		
+		start = clock();
+
+
 		cudaMemcpy(d_field, field, size*size, cudaMemcpyKind::cudaMemcpyHostToDevice);
 
 		cudaMemset(d_scores, 0, size*size);	
 
-		Evolve<<<1, block>>>(d_field, d_scores, b, size, d_next_field);
+		Evolve<<<dimGrid, dimBlock>>>(d_field, d_scores, b, size, d_next_field);
 
-		printf("%s\n", cudaGetErrorString(cudaGetLastError()));
+		//printf("%s\n", cudaGetErrorString(cudaGetLastError()));
 
 		cudaMemcpy(field, d_next_field, size*size, cudaMemcpyKind::cudaMemcpyDeviceToHost);
 
-		PrintField(field, size);
+
+		finish = clock();
+		printf("Time for step %i: %f\n", i, ((double)(finish - start)) / CLOCKS_PER_SEC);
+		fprintf(file, "%f,", ((double)(finish - start)) / CLOCKS_PER_SEC);
 	}
 
 	cudaFree(d_field);

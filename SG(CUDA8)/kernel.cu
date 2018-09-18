@@ -8,6 +8,16 @@
 
 #define BLOCK_SIZE 16
 
+inline int NormalizeIndex(int index, int length)
+{
+	if (index < 0)
+		return length - 1;
+	else if (index >= length) 
+		return 0;
+	
+	return index;
+}
+
 __global__ void Evolve(bool* field, float* scores, double b, int size, bool* next_field) {
 
 	int row = blockIdx.y * blockDim.y + threadIdx.y;
@@ -15,14 +25,15 @@ __global__ void Evolve(bool* field, float* scores, double b, int size, bool* nex
 	int memberIndex;
 
 	// Score
-	if (col < size && row < size) {
+	if (col < size && row < size)
+	{
 		float score = 0;
 
 		for (int i = -1; i <= 1; i++) //Row
 		{
 			for (int j = -1; j <= 1; j++) //Col
-			{
-				memberIndex = (col + i + size) % size + size * ((row + j + size) % size);
+			{	
+				memberIndex = NormalizeIndex(col + i, size) + size * NormalizeIndex(row + j, size);
 
 				if (field[memberIndex] == true)
 					score++;

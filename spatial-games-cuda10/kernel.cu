@@ -4,36 +4,39 @@
 #include <stdio.h>
 #include <random>
 
-#include <time.h>
+#include <sys/timeb.h>
 
 #define BLOCK_SIZE 16
 
-__global__ void Evolve(bool* field, float* scores, double b, int size, bool* next_field) {
-
+__global__ void Evolve(bool* field, float* scores, double b, int size, bool* next_field) 
+{
 	int row = blockIdx.y * blockDim.y + threadIdx.y;
 	int col = blockIdx.x * blockDim.x + threadIdx.x;
 	int memberIndex;
 
 	// Score
-	if (col < size && row < size) {
-		float score = 0;
+	if (col >= size || row >= size)
+		return;
+	
+	//printf("(%i, %i)\n", col, row);
 
-		for (int i = -1; i <= 1; i++) //Row
+	float score = 0;
+
+	for (int i = -1; i <= 1; i++) //Row
+	{
+		for (int j = -1; j <= 1; j++) //Col
 		{
-			for (int j = -1; j <= 1; j++) //Col
-			{
-				memberIndex = (col + i + size) % size + size * ((row + j + size) % size);
+			memberIndex = (col + i + size) % size + size * ((row + j + size) % size);
 
-				if (field[memberIndex] == true)
-					score++;
-			}
+			if (field[memberIndex] == true)
+				score++;
 		}
-
-		if (!field[row*size + col])
-			scores[row*size + col] = score * b;
-		else 
-			scores[row*size + col] = score;
 	}
+
+	if (!field[row*size + col])
+		scores[row*size + col] = score * b;
+	else
+		scores[row*size + col] = score;
 	
 	
 	__syncthreads();
@@ -56,17 +59,21 @@ __global__ void Evolve(bool* field, float* scores, double b, int size, bool* nex
 	}
 
 	next_field[row*size + col] = field[bestStrategyIndex];
+
+	__syncthreads();
 }
 
 
 
-void InitField(bool* field, size_t size, int persentage) {
+void InitField(bool* field, size_t size, int persentage) 
+{
 	for (size_t i = 0; i < size*size; i++) {
-		field[i] = rand() % 100 < persentage;
+		field[i] = rand() % 100 > persentage;
 	}
 }
 
-void PrintField(bool* field, int size) {
+void PrintField(bool* field, int size) 
+{
 	printf("\n");
 	for (int i = -1; i < size; i++) {
 		for (size_t j = 0; j < size; j++)
@@ -80,55 +87,76 @@ void PrintField(bool* field, int size) {
 	}
 }
 
+int GetMilliCount() {
+	timeb tb;
+	ftime(&tb);
+	int nCount = tb.millitm + (tb.time & 0xfffff) * 1000;
+	return nCount;
+}
+
+int GetMilliSpan(int nTimeStart) {
+	int nSpan = GetMilliCount() - nTimeStart;
+	if (nSpan < 0)
+		nSpan += 0x100000 * 1000;
+	return nSpan;
+}
+
 int main(int argc, char * argv[])
 {
-	FILE *file;
-	clock_t start, finish;
+	int start;
 
-// Main program
+	// Main program
 
 	bool* field;
-	unsigned int size = atoi(argv[0]);
+	unsigned int size = atoi(argv[1]);
 	double b = 1.81;
 
-	unsigned int steps = 10;
+	unsigned int steps = 20;
 
 	bool *d_field, *d_next_field;
 	float *d_scores;
 
 	field = (bool*)malloc(sizeof(bool)*size*size);
-	
-// GPU Memory
+
+	// GPU Memory
 	cudaMalloc((void**)&d_field, sizeof(bool)*size*size);
 	cudaMalloc((void**)&d_scores, sizeof(float)*size*size);
 	cudaMalloc((void**)&d_next_field, sizeof(bool)*size*size);
-
 
 	InitField(field, size, 21);
 
 	unsigned int grid_rows = (size + BLOCK_SIZE - 1) / BLOCK_SIZE;
 	unsigned int grid_cols = (size + BLOCK_SIZE - 1) / BLOCK_SIZE;
-	dim3 dimGrid(grid_cols, grid_rows);
-	dim3 dimBlock(BLOCK_SIZE, BLOCK_SIZE);
 
+	dim3 blockSize;
+	dim3 gridSize;
 
-	for (int i = 0; i < steps; i++) {
+	blockSize = dim3(BLOCK_SIZE, BLOCK_SIZE, 1);
+	gridSize = dim3(grid_rows, grid_cols, 1);
+
+	printf("[%i, [", size);
+
+	for (size_t i = 0; i < steps; i++)
+	{
 		// Init scores with zeros in GPU Memory		
-		start = clock();
+		cudaMemcpy(d_field, field, size * size, cudaMemcpyKind::cudaMemcpyHostToDevice);
 
-		cudaMemcpy(d_field, field, size*size, cudaMemcpyKind::cudaMemcpyHostToDevice);
+		cudaMemset(d_scores, 0, size * size);
 
-		cudaMemset(d_scores, 0, size*size);	
+		start = GetMilliCount();
 
-		Evolve<<<dimGrid, dimBlock>>>(d_field, d_scores, b, size, d_next_field);
+		Evolve<<<gridSize, blockSize>>>(d_field, d_scores, b, size, d_next_field);
 
-		printf("%s\n", cudaGetErrorString(cudaGetLastError()));
+		//printf("%s\n", cudaGetErrorString(cudaGetLastError()));
 
 		cudaMemcpy(field, d_next_field, size*size, cudaMemcpyKind::cudaMemcpyDeviceToHost);
 
+		printf("%f", GetMilliSpan(start) * 0.001);
 
-		finish = clock();
-		printf("%f, ", ((double)(finish - start)) / CLOCKS_PER_SEC);
+		if (i < steps - 1)
+			printf(", ");
+		else
+			printf("]], \n");
 	}
 
 	cudaFree(d_field);

@@ -111,7 +111,7 @@ int main(int argc, char * argv[])
 	unsigned int size = atoi(argv[1]);
 	double b = 1.81;
 
-	unsigned int steps = 20;
+	unsigned int steps = 0;
 
 	bool *d_field, *d_next_field;
 	float *d_scores;
@@ -133,17 +133,16 @@ int main(int argc, char * argv[])
 
 	blockSize = dim3(BLOCK_SIZE, BLOCK_SIZE, 1);
 	gridSize = dim3(grid_rows, grid_cols, 1);
+	
+	start = GetMilliCount();
 
-	printf("[%i, [", size);
-
-	for (size_t i = 0; i < steps; i++)
+	for (size_t i = 0; i < 1000 && GetMilliSpan(start) < 1000; i++)
 	{
+		steps++;
 		// Init scores with zeros in GPU Memory		
 		cudaMemcpy(d_field, field, size * size, cudaMemcpyKind::cudaMemcpyHostToDevice);
 
 		cudaMemset(d_scores, 0, size * size);
-
-		start = GetMilliCount();
 
 		Evolve<<<gridSize, blockSize>>>(d_field, d_scores, b, size, d_next_field);
 
@@ -151,13 +150,9 @@ int main(int argc, char * argv[])
 
 		cudaMemcpy(field, d_next_field, size*size, cudaMemcpyKind::cudaMemcpyDeviceToHost);
 
-		printf("%f", GetMilliSpan(start) * 0.001);
-
-		if (i < steps - 1)
-			printf(", ");
-		else
-			printf("]], \n");
 	}
+
+	printf("[%i, %f, %i]\n", size, GetMilliSpan(start) * 0.001 / steps, steps);
 
 	cudaFree(d_field);
 	cudaFree(d_next_field);

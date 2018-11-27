@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <random>
+#include <stdio.h>
 
 #include <sys/timeb.h>
 
@@ -72,6 +73,16 @@ void InitField(bool* field, size_t size, int persentage)
 	}
 }
 
+void InitField(bool* field, size_t size, string fileName) 
+{
+	byte buffer[size*size];
+	FILE* file;
+
+	file = fopen(fileName, "r");
+	fread(buffer, sizeof(buffer), 1, file);
+	file.close();
+}
+
 void PrintField(bool* field, int size) 
 {
 	printf("\n");
@@ -123,7 +134,7 @@ int main(int argc, char * argv[])
 	cudaMalloc((void**)&d_scores, sizeof(float)*size*size);
 	cudaMalloc((void**)&d_next_field, sizeof(bool)*size*size);
 
-	InitField(field, size, 21);
+	InitField(field, size, "test.bin");
 
 	unsigned int grid_rows = (size + BLOCK_SIZE - 1) / BLOCK_SIZE;
 	unsigned int grid_cols = (size + BLOCK_SIZE - 1) / BLOCK_SIZE;
@@ -136,7 +147,7 @@ int main(int argc, char * argv[])
 	
 	start = GetMilliCount();
 
-	for (size_t i = 0; i < 1000 && GetMilliSpan(start) < 1000; i++)
+	for (size_t i = 0; i < 1000000 && GetMilliSpan(start) < 1000*600; i++)
 	{
 		steps++;
 		// Init scores with zeros in GPU Memory		
@@ -149,7 +160,6 @@ int main(int argc, char * argv[])
 		//printf("%s\n", cudaGetErrorString(cudaGetLastError()));
 
 		cudaMemcpy(field, d_next_field, size*size, cudaMemcpyKind::cudaMemcpyDeviceToHost);
-
 	}
 
 	printf("[%i, %f, %i]\n", size, GetMilliSpan(start) * 0.001 / steps, steps);
